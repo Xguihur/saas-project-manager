@@ -45,20 +45,26 @@ Redis、RabbitMQ、对象存储、CI/CD 和 Kubernetes 会在实际需求对应�
 
 ```bash
 corepack enable
-pnpm install
-cp .env.example .env
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
+test -f .env || cp .env.example .env
+test -f backend/.env || cp backend/.env.example backend/.env
+test -f frontend/.env || cp frontend/.env.example frontend/.env
+pnpm install --frozen-lockfile
 ```
 
 ### 3. 启动 MySQL 并执行迁移
 
 ```bash
 pnpm db:up
-pnpm db:migrate
+docker compose ps
 ```
 
-首次执行迁移会创建 Prisma migration history 和 Phase 0 的五张核心表。后续在已有 migration 的环境使用 `pnpm db:deploy`。
+等待 `mysql` 状态变为 `healthy`，再应用已提交的迁移：
+
+```bash
+pnpm db:deploy
+```
+
+首次执行会创建 Prisma migration history 和 Phase 0 的五张核心表。开发时修改数据模型、需要生成新迁移才使用 `pnpm db:migrate`。
 
 ### 4. 启动前后端
 
@@ -79,7 +85,7 @@ pnpm build
 curl -i http://localhost:3000/api/health
 ```
 
-完整步骤、环境变量说明、故障排查和验收清单见 [`docs/phase-0.md`](docs/phase-0.md)。后续每个阶段的启动和验证说明继续沉淀在 `docs/` 目录。
+首次启动、日常启停、Prisma Studio 和故障排查见 [Phase 0 本地使用指南](docs/phase-0.md)。后续每个阶段的启动和验证说明继续沉淀在 `docs/` 目录。
 
 ## 仓库结构
 

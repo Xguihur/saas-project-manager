@@ -1,5 +1,5 @@
 ---
-title: Phase 0 启动与验证
+title: Phase 0 本地使用指南
 phase: Phase 0
 status: active
 tags:
@@ -8,198 +8,141 @@ tags:
   - runbook
 ---
 
-# Phase 0 启动与验证
+# Phase 0 本地使用指南
 
-这份文档说明如何从干净的工作区启动 MySQL、执行 Prisma 迁移、启动前后端，并验证一次请求的完整链路。
+启动顺序：Docker → MySQL → 数据库迁移 → 前后端。
 
-## 环境要求
+当前只需要 MySQL、NestJS 后端和 Vue 前端，不需要 Redis 等其他服务。Phase 0 提供系统状态页面和数据库骨架，尚未实现注册、登录和业务增删改查。
 
-- Node.js 22，版本由根目录 `.nvmrc` 约束
-- pnpm 11
-- Docker Desktop 或 OrbStack，Docker daemon 必须已经启动
+## 1. 准备环境并进入项目
 
-检查命令：
+需要 Node.js 22、pnpm 11（项目指定 11.5.2）、OrbStack 或 Docker Desktop。
+
+先打开 OrbStack 或 Docker Desktop，等待启动完成，再在终端执行：
 
 ```bash
-node --version
-pnpm --version
-docker compose version
+cd /Users/xiaolongxia/Desktop/2026-RUSH/project/saas-project-manager
 docker info
 ```
 
-## 第一次安装
+项目位置不同时替换上述路径。`docker info` 能显示服务端信息，说明 Docker 已就绪。下面的命令都在项目根目录执行。
 
-在仓库根目录执行：
+## 2. 准备配置并安装依赖（首次使用）
 
 ```bash
-corepack enable
-pnpm install
-cp .env.example .env
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
+test -f .env || cp .env.example .env
+test -f backend/.env || cp backend/.env.example backend/.env
+test -f frontend/.env || cp frontend/.env.example frontend/.env
+pnpm install --frozen-lockfile
 ```
 
-`.env` 只给 Docker Compose 使用，`backend/.env` 给 NestJS 和 Prisma 使用，`frontend/.env` 只包含可以暴露到浏览器的 API 地址。三个文件都已经被 Git 忽略；只提交对应的 `.env.example`。
+前三行只创建缺失的配置，不覆盖已有配置。安装命令会安装前后端依赖，并通过后端的 `postinstall` 脚本生成 Prisma Client。以后依赖变化时再重新安装。
 
-## 启动数据库
+| 文件 | 作用 |
+| --- | --- |
+| `.env` | MySQL 容器的账号、密码和数据库名 |
+| `backend/.env` | 后端端口和数据库连接地址 |
+| `frontend/.env` | 前端 API 路径，默认 `/api` |
+
+## 3. 启动 MySQL
 
 ```bash
 pnpm db:up
 docker compose ps
 ```
 
-等待 `mysql` 的健康状态变为 `healthy`。查看数据库日志：
+作用：在后台启动数据库。等待 `mysql` 状态变为 `healthy`；若仍为 `starting`，稍后再次执行 `docker compose ps`。
 
-```bash
-pnpm db:logs
-```
+需要查看数据库日志时运行 `pnpm db:logs`，按 `Ctrl + C` 退出日志查看，数据库仍在后台运行。
 
-停止数据库容器但保留数据：
-
-```bash
-pnpm db:down
-```
-
-如需清空本地数据库和 Docker volume，确认不再需要数据后执行：
-
-```bash
-docker compose down -v
-```
-
-## 数据库迁移
-
-Phase 0 已提交初始 migration。启动 MySQL 后执行：
-
-```bash
-pnpm db:migrate
-```
-
-Compose 会在首次初始化 MySQL 时创建 `saas_project_manager_shadow`，供 Prisma 开发迁移使用。首次执行迁移会创建 Prisma migration history 和 Phase 0 的五张核心表。
-
-它会在开发环境应用 migration，并在 Prisma schema 变化时创建新的 migration。只需要把生成的 `backend/prisma/migrations/` 提交 Git。
-
-在已有 migration 的环境（例如 CI 或部署环境）使用：
+## 4. 应用数据库迁移
 
 ```bash
 pnpm db:deploy
 ```
 
-不要在生产环境使用 `prisma db push`，也不要修改已经提交并执行过的 migration；新的数据库变化应创建新的 migration。
+作用：执行项目已经提交的迁移。首次运行会创建 `users`、`organizations`、`organization_members`、`projects`、`tasks` 五张业务表及迁移记录表。
 
-查看数据库：
+可以重复执行，已应用的迁移不会重复执行。以后拉取到新迁移时，也运行这个命令。
 
-```bash
-pnpm db:studio
-```
-
-## 启动项目
-
-同时启动前端和后端：
+## 5. 启动前后端并验证
 
 ```bash
 pnpm dev
 ```
 
-也可以分别启动：
+作用：同时启动后端和前端，保持终端运行。这个命令不启动数据库。
 
-```bash
-pnpm dev:backend
-pnpm dev:frontend
-```
-
-访问：
-
-| 地址 | 用途 |
+| 地址 | 用途 / 成功标志 |
 | --- | --- |
-| http://localhost:5173 | Vue 前端 |
-| http://localhost:3000/api/health | 健康检查 API |
-| http://localhost:3000/docs | Swagger UI |
+| http://localhost:5173 | 前端页面，显示“API 正常” |
+| http://localhost:3000/api/health | 后端健康检查，返回 `"status": "ok"` |
+| http://localhost:3000/docs | Swagger 接口文档 |
 
-开发环境中的 Vite 会把 `/api` 请求代理到 `http://localhost:3000`。如需修改 API 地址，编辑 `frontend/.env` 的 `VITE_API_BASE_URL`。
+开发时，前端的 `/api` 请求由 Vite 代理到后端 `http://localhost:3000`。健康检查接口本身不查询数据库；数据库可用性还需结合容器状态和迁移执行结果判断。
 
-## 验证 Phase 0
+如果要分别看日志，可改为在两个终端中进入项目根目录，分别执行 `pnpm dev:backend` 和 `pnpm dev:frontend`，与 `pnpm dev` 二选一。
 
-### API 健康检查
+## 6. 查看数据库（可选）
 
-```bash
-curl -i http://localhost:3000/api/health
-```
-
-成功响应示例：
-
-```json
-{
-  "status": "ok",
-  "service": "backend",
-  "timestamp": "2026-09-27T00:00:00.000Z",
-  "requestId": "..."
-}
-```
-
-响应头会包含同一个 `x-request-id`。后端终端日志也会记录该 ID，便于把浏览器请求和服务端日志对应起来。
-
-### 错误格式
-
-健康检查只接受 `GET`。例如：
+另开一个终端，进入项目根目录后执行：
 
 ```bash
-curl -i -X POST http://localhost:3000/api/health
+pnpm db:studio
 ```
 
-错误响应包含 `statusCode`、稳定的 `code`、用户可理解的 `message` 和 `requestId`，不会返回堆栈或数据库连接信息。
+作用：启动 Prisma Studio，通常自动打开 http://localhost:5555，以终端显示的地址为准。它可以查看、筛选、新增、修改和删除数据库记录。
 
-### 自动检查
+Studio 根据 `backend/prisma/schema.prisma` 识别模型，并使用 `backend/.env` 中的 `DATABASE_URL` 连接 MySQL。只要依赖、配置和数据库就绪，即可使用，无需启动项目的前后端。
+
+请求路径：浏览器 → 本地 Studio 服务 → MySQL。数据保存在 MySQL 中，Studio 中保存的修改会影响真实数据库，不经过 NestJS 的业务校验。使用完后在 Studio 终端按 `Ctrl + C` 关闭服务。
+
+也可以使用 Navicat 连接同一个数据库：
+
+| 参数 | 默认配置 |
+| --- | --- |
+| 主机 / 端口 | `127.0.0.1:3307`（容器内部是 `3306`） |
+| 数据库 / 用户名 | `saas_project_manager` / `saas_app` |
+| 密码 | 查看根目录 `.env` 中的 `MYSQL_PASSWORD` |
+
+Studio 适合按项目模型快速查看和编辑数据；Navicat 适合编写 SQL、管理表结构和索引、导入导出等完整数据库管理操作。两者连接同一个库时，刷新后会看到相同的数据。
+
+## 以后每天启动
+
+先打开 OrbStack 或 Docker Desktop，进入项目根目录：
 
 ```bash
-pnpm lint
-pnpm test
-pnpm build
+pnpm db:up
+docker compose ps
 ```
 
-`pnpm test` 当前验证健康检查控制器的返回结构，不要求连接数据库；数据库迁移则由 `pnpm db:migrate` 单独验证。
+确认 MySQL 为 `healthy` 后执行 `pnpm dev`。有新迁移时，在启动前执行 `pnpm db:deploy`。
 
-## 请求链路
+## 停止项目
 
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant V as Vite
-    participant N as NestJS
-    participant P as Pipeline
-    participant C as Controller
+- 前后端：在运行终端按 `Ctrl + C`；分别启动时分别停止。
+- Studio：在它的终端按 `Ctrl + C`；仅关闭浏览器不会停止服务。
+- 数据库：执行 `pnpm db:down`，已有数据会保留。不要加 `-v`，该参数会删除数据库数据卷。
 
-    B->>V: GET /api/health
-    V->>N: proxy request
-    N->>P: requestId + validation + filter
-    P->>C: HealthController
-    C-->>B: 200 JSON + x-request-id
-```
+## Prisma 中几个工具的分工
 
-Phase 0 的健康检查不访问数据库，数据库链路由 Prisma migration 和后续业务接口验证。这样可以分别判断“应用是否启动”和“数据库是否可用”。
+| 名称 | 在项目中的作用 |
+| --- | --- |
+| Schema | `backend/prisma/schema.prisma` 描述模型、字段及关联 |
+| Client | 生成供 TypeScript 后端调用的数据库访问代码 |
+| Migrate | 用迁移文件创建和更新数据库表结构 |
+| Studio | 在浏览器中查看和编辑数据库记录 |
+
+MySQL 负责存数据，Prisma 提供操作数据库的工具。只启动项目用 `pnpm db:deploy`；开发时修改 Schema、需要生成新迁移才用 `pnpm db:migrate`，它会使用影子数据库校验迁移（参见 [数据模型说明](data-model.md)）。
 
 ## 常见问题
 
-### Docker daemon 未运行
+| 现象 | 处理 |
+| --- | --- |
+| Docker 连接失败 / 找不到 `docker.sock` | 启动当前 Docker 上下文对应的 OrbStack 或 Docker Desktop，再运行 `docker info` |
+| Prisma 连接数据库失败 | 确认 MySQL 为 `healthy`，并核对 `backend/.env` 中的账号、密码、库名和端口 `3307` |
+| 修改 `.env` 后数据库密码不变 | 已有数据卷不会因环境变量改变而自动更新账号；需使用原凭据连接后修改数据库账号，并同步配置 |
+| 前端显示“连接失败” | 查看后端终端日志，检查健康接口；修改后端端口时同步设置 `frontend/.env` 的 `VITE_DEV_API_URL`，然后重启前端 |
+| 端口占用 | 用 `lsof -nP -iTCP:端口号 -sTCP:LISTEN` 查占用；修改数据库映射端口时同步修改后端两个数据库 URL |
 
-如果看到 `Cannot connect to the Docker daemon`，启动 Docker Desktop 或 OrbStack 后再执行 `pnpm db:up`。命令行和 Compose 已安装并不代表后台服务正在运行。
-
-### 3307 端口被占用
-
-查看占用进程：
-
-```bash
-lsof -nP -iTCP:3307 -sTCP:LISTEN
-```
-
-停止冲突的 MySQL，或修改 `compose.yaml` 左侧端口并同步修改 `backend/.env` 中的连接地址。Compose 默认使用宿主机 `3307`，容器内部仍使用 `3306`，这样不会和开发机已有 MySQL 冲突。
-
-### Prisma 连接失败
-
-确认 MySQL 已经 `healthy`，再检查 `backend/.env` 的 `DATABASE_URL` 与根目录 `.env` 的账号、密码、数据库名一致。注意默认端口是宿主机 `3307`。修改 Compose 环境变量后，如果已有 volume，旧账号配置不会自动覆盖；需要重新初始化时执行 `docker compose down -v`。
-
-## 当前限制与后续
-
-- Phase 0 只提供健康检查和数据库骨架，没有注册、登录或业务 CRUD。
-- MySQL 通过本地 Docker volume 持久化，尚未提供生产备份。
-- 日志是开发环境的结构化基础版本，尚未接入集中式日志或指标系统。
-- 下一阶段先实现账号、组织、项目和任务列表，并为每个能力新增 `docs/specs/` 中的 Feature Spec。
+需要检查代码时可另行执行 `pnpm lint`、`pnpm test`、`pnpm build`，它们不是日常启动的必需步骤。
