@@ -1,10 +1,31 @@
+# Dependencies and package manager caches
 node_modules/
+.pnpm-store/
+
+# Build output and generated files
 dist/
+build/
+*.tsbuildinfo
+backend/prisma/generated/
+
+# Tool caches, test output, and logs
+.cache/
+.vite/
+.eslintcache
 coverage/
-.DS_Store
+.nyc_output/
+logs/
+*.log
+
+# Local environment variables (keep example files)
 .env
 .env.*
 !.env.example
-backend/.env.test
-backend/prisma/generated/
-*.log
+!.env.*.example
+
+# Operating system and editor temporary files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
